@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentCourt — Arbitration Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-deep:#120E09;
+    --bg-panel:#1A1410;
+    --bg-panel-raised:#221B15;
+    --line:#352A20;
+    --gavel:#C08A3E;
+    --gavel-bright:#E4B368;
+    --parchment:#F1E9DA;
+    --parchment-dim:#A79A87;
+    --slate:#6B6156;
+    --amber:#D9A33B;
+    --red:#C0524F;
+    --seal:#7FA37A;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at top, rgba(192,138,62,.10), transparent 55%),
+      var(--bg-deep);
+    color:var(--parchment);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--gavel-bright);}
+  code{ font-family:'IBM Plex Mono',monospace; }
+
+  /* ---------------- Sticky top bar: identity + wallet, on every view ---------------- */
+  #topbar{
+    position:sticky; top:0; z-index:20;
+    background:rgba(18,14,9,.92);
+    backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-inner{
+    max-width:1180px; margin:0 auto; padding:14px 20px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  }
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand h1{
+    font-family:'Fraunces',serif; font-weight:700; font-size:21px; margin:0; color:var(--parchment);
+  }
+  .brand h1 em{ font-style:normal; color:var(--amber); }
+  .brand .addr{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate); }
+  .status-pill{
+    display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--parchment-dim);
+    border:1px solid var(--line); border-radius:20px; padding:7px 14px;
+  }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--slate); flex-shrink:0; }
+  .dot.on{ background:var(--gavel-bright); box-shadow:0 0 8px var(--gavel-bright); }
+  .status-pill button{
+    background:none;border:1px solid var(--line);color:var(--gavel-bright);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;
+    padding:5px 9px;border-radius:14px;
+  }
+  .status-pill button:hover{ border-color:var(--gavel); }
+
+  /* ---------------- Route nav ---------------- */
+  nav#routeNav{
+    max-width:1180px; margin:0 auto; padding:0 20px;
+    display:flex; gap:6px; border-bottom:1px solid var(--line);
+    overflow-x:auto;
+  }
+  nav#routeNav button{
+    background:none; border:none; color:var(--parchment-dim);
+    font-family:'IBM Plex Mono',monospace; font-size:12.5px; letter-spacing:.02em;
+    padding:14px 16px; cursor:pointer; white-space:nowrap;
+    border-bottom:2px solid transparent;
+  }
+  nav#routeNav button.active{ color:var(--amber); border-bottom-color:var(--gavel-bright); }
+  nav#routeNav button:hover{ color:var(--parchment); }
+
+  main{ max-width:1180px; margin:0 auto; padding:28px 20px 80px; }
+  .view{ display:none; }
+  .view.active{ display:block; animation:fadein .15s ease; }
+  @keyframes fadein{ from{opacity:0;} to{opacity:1;} }
+
+  .view-intro{ max-width:720px; margin:0 0 24px; }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--gavel-bright); margin:0 0 10px;
+  }
+  .view-intro h2{ font-family:'Fraunces',serif; font-size:26px; margin:0 0 8px; color:var(--parchment); }
+  .view-intro p{ font-size:14.5px; line-height:1.6; color:var(--parchment-dim); margin:0; }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:20px; }
+  .panel{
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px 22px 20px;
+  }
+  .panel.wide{ grid-column:1 / -1; }
+  .panel h3{
+    font-family:'Fraunces',serif;
+    font-size:18px;
+    margin:0 0 6px;
+    color:var(--parchment);
+  }
+  .panel .step{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--bg-deep);
+    background:var(--gavel-bright);
+    border-radius:3px;
+    padding:2px 7px;
+    margin-right:8px;
+    font-weight:600;
+  }
+  .desc{ font-size:13.5px; color:var(--parchment-dim); line-height:1.55; margin:0 0 16px; }
+  label{
+    display:block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    color:var(--parchment-dim);
+    margin:14px 0 6px;
+  }
+  label:first-of-type{ margin-top:0; }
+  input[type=text], input[type=number], input[type=datetime-local], textarea, select{
+    width:100%;
+    background:var(--bg-panel-raised);
+    border:1px solid var(--line);
+    border-radius:6px;
+    color:var(--parchment);
+    font-family:'Inter',sans-serif;
+    font-size:13.5px;
+    padding:9px 11px;
+  }
+  textarea{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; min-height:70px; resize:vertical; }
+  input:focus, textarea:focus, select:focus{ outline:none; border-color:var(--gavel); }
+  .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .hint{ font-size:11.5px; color:var(--slate); margin-top:5px; }
+  .cond-row{ border:1px dashed var(--line); border-radius:6px; padding:10px; margin-top:10px; }
+  .cond-total{ font-family:'IBM Plex Mono',monospace; font-size:12px; margin-top:8px; color:var(--parchment-dim); }
+  .cond-total.bad{ color:var(--red); }
+  .cond-total.good{ color:var(--seal); }
+
+  button.primary{
+    margin-top:16px;
+    background:var(--gavel);
+    color:#1A1207;
+    border:none;
+    border-radius:6px;
+    padding:11px 18px;
+    font-weight:600;
+    font-size:13.5px;
+    cursor:pointer;
+  }
+  button.primary:hover:not(:disabled){ background:var(--gavel-bright); }
+  button.primary:disabled{ opacity:.55; cursor:wait; }
+  button.secondary{
+    margin-top:16px; margin-left:8px;
+    background:none;
+    color:var(--gavel-bright);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:10px 16px;
+    font-size:13.5px;
+    cursor:pointer;
+  }
+  button.secondary:hover:not(:disabled){ border-color:var(--gavel); }
+  button.secondary:disabled{ opacity:.55; cursor:wait; }
+  button.tiny{
+    background:none; border:1px solid var(--line); color:var(--parchment-dim);
+    border-radius:5px; font-size:11.5px; padding:6px 9px; cursor:pointer;
+  }
+
+  .out{
+    display:none;
+    margin-top:14px;
+    background:var(--bg-panel-raised);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:12px 14px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    line-height:1.55;
+    white-space:pre-wrap;
+    word-break:break-word;
+    color:var(--parchment-dim);
+    max-height:420px;
+    overflow-y:auto;
+  }
+  .out.ok{ border-color:var(--seal); color:var(--parchment); }
+  .out.err{ border-color:var(--red); color:#F0C7C5; }
+  .out.pending{ border-color:var(--gavel); }
+
+  /* ---------------- Manage view: agreement-id context bar ---------------- */
+  .id-context{
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 22px;
+    margin-bottom:20px;
+    display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+  }
+  .id-context .field{ flex:1; min-width:220px; }
+  .id-context label{ margin:0 0 6px; }
+
+  /* ---------------- Explorer ---------------- */
+  .explorer-toolbar{ display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .explorer-toolbar .count{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--parchment-dim); }
+  .agreement-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+  .agreement-card{
+    background:var(--bg-panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px 18px; cursor:pointer; transition:border-color .12s;
+  }
+  .agreement-card:hover{ border-color:var(--gavel); }
+  .agreement-card .aid{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--amber); }
+  .agreement-card .task{ font-size:13.5px; color:var(--parchment); margin:8px 0; line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .agreement-card .meta{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate); }
+  .badge{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    padding:3px 9px;
+    border-radius:20px;
+    border:1px solid var(--line);
+    text-transform:uppercase;
+    letter-spacing:.03em;
+  }
+  .badge.open, .badge.pending_acceptance{ color:var(--amber); border-color:var(--amber); }
+  .badge.submitted, .badge.disputed, .badge.adjudicated, .badge.appealed{ color:var(--gavel-bright); border-color:var(--gavel); }
+  .badge.settled{ color:var(--seal); border-color:var(--seal); }
+  .badge.refunded, .badge.cancelled{ color:var(--parchment-dim); }
+  .empty-state{
+    text-align:center; padding:50px 20px; color:var(--parchment-dim);
+    border:1px dashed var(--line); border-radius:10px; font-size:13.5px;
+  }
+  .spinner{
+    display:inline-block; width:13px; height:13px; border-radius:50%;
+    border:2px solid var(--line); border-top-color:var(--gavel-bright);
+    animation:spin .7s linear infinite; margin-right:8px; vertical-align:-2px;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  footer{
+    max-width:1180px; margin:0 auto; padding:30px 20px 60px;
+    font-size:12px; color:var(--slate); line-height:1.6;
+    border-top:1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <h1>Agent<em>Court</em></h1>
+      <span class="addr">contract: <code id="contractAddrText"></code></span>
+    </div>
+    <div class="status-pill">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Not connected</span>
+      <button id="connectBtn" type="button">Connect wallet</button>
+      <button id="testSessionBtn" type="button">Start test session</button>
+    </div>
+  </div>
+  <nav id="routeNav">
+    <button data-route="create" type="button">1 · Create Agreement</button>
+    <button data-route="manage" type="button">2 · Manage Agreement</button>
+    <button data-route="explorer" type="button">3 · Explorer</button>
+  </nav>
+</div>
+
+<main>
+
+  <!-- ============================================================ -->
+  <!-- VIEW: CREATE                                                  -->
+  <!-- ============================================================ -->
+  <section class="view" id="view-create">
+    <div class="view-intro">
+      <p class="eyebrow">Step 1</p>
+      <h2>Create Agreement</h2>
+      <p>
+        Called by Party A. This freezes the task description and every
+        condition's name / description / weight forever — nothing here is
+        editable after creation. Condition weights must sum to exactly
+        10000 basis points (100%).
+      </p>
+    </div>
+
+    <div class="grid">
+      <section class="panel wide">
+        <h3>Contract terms</h3>
+        <label>Party B address</label>
+        <input type="text" id="partyB" placeholder="0x...">
+
+        <label>Task description</label>
+        <textarea id="taskDesc" placeholder="Prepare a market research report on X."></textarea>
+
+        <div class="row">
+          <div>
+            <label>Payment amount <span class="hint" style="text-transform:none;">(informational — contract decides, does not move funds)</span></label>
+            <input type="number" id="paymentAmount" value="100" min="1">
+          </div>
+          <div>
+            <label>Submission deadline</label>
+            <input type="datetime-local" id="deadline">
+          </div>
+        </div>
+
+        <label style="margin-top:20px;">Conditions <span class="hint" style="text-transform:none;">(weights in basis points, must total 10000)</span></label>
+        <div id="conditionRows"></div>
+        <div class="cond-total" id="condTotal">Total weight: 0 / 10000</div>
+        <button class="tiny" id="addCondBtn" type="button" style="margin-top:10px;">+ add condition</button>
+
+        <div>
+          <button class="primary" id="createBtn" type="button">Create Agreement</button>
+        </div>
+        <div class="out" id="createOut"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- VIEW: MANAGE (everything scoped to one agreement id)          -->
+  <!-- ============================================================ -->
+  <section class="view" id="view-manage">
+    <div class="view-intro">
+      <p class="eyebrow">Step 2</p>
+      <h2>Manage Agreement</h2>
+      <p>
+        Pick one agreement (from Create, from the Explorer, or by ID) and
+        take it through its lifecycle: accept, submit, dispute, adjudicate,
+        appeal, or read its current state.
+      </p>
+    </div>
+
+    <div class="id-context">
+      <div class="field">
+        <label>Active agreement ID</label>
+        <input type="text" id="activeId" placeholder="agreement-1">
+      </div>
+      <button class="secondary" id="loadActiveBtn" type="button" style="margin-top:0;">Load state</button>
+    </div>
+
+    <div class="panel wide" id="stateSummaryPanel" style="display:none; margin-bottom:20px;">
+      <h3>Current state</h3>
+      <div class="out ok" id="stateSummaryOut" style="display:block;"></div>
+    </div>
+
+    <div class="grid">
+
+      <section class="panel">
+        <h3><span class="step">A</span>Accept / Cancel</h3>
+        <p class="desc">Party B accepts to make the agreement binding. Party A may cancel any time before acceptance.</p>
+        <div>
+          <button class="primary" id="acceptBtn" type="button">Accept (Party B)</button>
+          <button class="secondary" id="cancelBtn" type="button">Cancel (Party A)</button>
+        </div>
+        <div class="out" id="acceptOut"></div>
+      </section>
+
+      <section class="panel">
+        <h3><span class="step">B</span>Submit Deliverable</h3>
+        <p class="desc">Party A, before the submission deadline. Evidence URLs get locked into the record once a dispute is resolved.</p>
+        <label>Claim text</label>
+        <textarea id="submitClaim" placeholder="Delivered on time with 6 qualifying sources."></textarea>
+        <label>Evidence URLs (one per line, optional, max 5)</label>
+        <textarea id="submitUrls" placeholder="https://..."></textarea>
+        <button class="primary" id="submitBtn" type="button">Submit Deliverable</button>
+        <div class="out" id="submitOut"></div>
+      </section>
+
+      <section class="panel">
+        <h3><span class="step">C</span>Raise Dispute</h3>
+        <p class="desc">Party B, within the dispute window after submission. If nobody disputes in time, use the permissionless <code>finalize_uncontested</code> action instead.</p>
+        <label>Counter-claim text</label>
+        <textarea id="disputeClaim" placeholder="Only 3 sources actually qualify."></textarea>
+        <label>Evidence URLs (one per line, optional, max 5)</label>
+        <textarea id="disputeUrls" placeholder="https://..."></textarea>
+        <button class="primary" id="disputeBtn" type="button">Raise Dispute</button>
+        <div class="out" id="disputeOut"></div>
+      </section>
+
+      <section class="panel">
+        <h3><span class="step">D</span>Permissionless Actions</h3>
+        <p class="desc">
+          Anyone can call these — they only succeed once the right condition
+          is met. This is what guarantees no agreement can ever get
+          permanently stuck. <code>resolve_dispute</code> and
+          <code>resolve_appeal</code> trigger the real fetch + LLM
+          adjudication under validator consensus, so those two can take a
+          few minutes.
+        </p>
+        <label>Action</label>
+        <select id="permAction">
+          <option value="resolve_dispute">resolve_dispute — lock evidence, run first adjudication</option>
+          <option value="resolve_appeal">resolve_appeal — run final, appeal-round adjudication</option>
+          <option value="finalize_uncontested">finalize_uncontested — no dispute raised in time</option>
+          <option value="finalize_unappealed">finalize_unappealed — no appeal raised in time</option>
+          <option value="expire_unaccepted">expire_unaccepted — party_b never accepted in time</option>
+          <option value="expire_unsubmitted">expire_unsubmitted — party_a never delivered in time</option>
+          <option value="force_timeout_dispute">force_timeout_dispute — adjudication stalled, refund</option>
+          <option value="force_timeout_appeal">force_timeout_appeal — appeal stalled, fall back to first verdict</option>
+        </select>
+        <button class="primary" id="permBtn" type="button">Run action</button>
+        <div class="out" id="permOut"></div>
+      </section>
+
+      <section class="panel">
+        <h3><span class="step">E</span>Raise Appeal</h3>
+        <p class="desc">
+          Either party, once, within the challenge window after a verdict —
+          but only if that verdict did not already fully favor them.
+          Argument text only: no new evidence URLs can be introduced on appeal.
+        </p>
+        <label>Appeal argument</label>
+        <textarea id="appealArg" placeholder="The adjudicator undercounted qualifying sources."></textarea>
+        <button class="primary" id="appealBtn" type="button">Raise Appeal</button>
+        <div class="out" id="appealOut"></div>
+      </section>
+
+      <section class="panel">
+        <h3><span class="step">F</span>Check a role</h3>
+        <p class="desc">Read-only — no wallet or transaction required.</p>
+        <label>Address to check</label>
+        <input type="text" id="roleAddr" placeholder="0x...">
+        <button class="secondary" id="roleBtn" type="button">Check role</button>
+        <div class="out" id="roleOut"></div>
+      </section>
+
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- VIEW: EXPLORER                                                -->
+  <!-- ============================================================ -->
+  <section class="view" id="view-explorer">
+    <div class="view-intro">
+      <p class="eyebrow">Step 3</p>
+      <h2>Explorer</h2>
+      <p>
+        Every agreement this contract instance has ever created, read
+        directly from on-chain state — no separate indexer needed. Click a
+        card to jump straight to Manage with that ID loaded.
+      </p>
+    </div>
+
+    <div class="explorer-toolbar">
+      <button class="primary" id="refreshExplorerBtn" type="button" style="margin-top:0;">Refresh</button>
+      <span class="count" id="explorerCount"></span>
+    </div>
+
+    <div id="explorerBody">
+      <div class="empty-state">Click "Refresh" to load agreements from the contract.</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  AgentCourt dApp — a minimal reference frontend built with <code>genlayer-js</code>.
+  Every dynamic value on this page is written with <code>textContent</code>/<code>createElement</code> only —
+  <code>innerHTML</code> is never used, so data returned from the contract can never be interpreted as HTML/script by this page.
+</footer>
+
+<script type="module">
+import { createClient, createAccount } from "https://esm.sh/genlayer-js@latest";
+import { studionet } from "https://esm.sh/genlayer-js@latest/chains";
+
+// ------------------------------------------------------------------
+// EDIT THIS after you deploy the contract.
+// ------------------------------------------------------------------
+const CONTRACT_ADDRESS = "0xcFFa63056A44B21a82B9bdBEF5DF8f5b12D6552E";
+
+document.getElementById('contractAddrText').textContent = CONTRACT_ADDRESS;
+
+let client = null;
+let account = null;
+
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const connectBtn = document.getElementById('connectBtn');
+const testSessionBtn = document.getElementById('testSessionBtn');
+
+function setStatus(connected, label){
+  statusDot.classList.toggle('on', connected);
+  statusText.textContent = label;
+}
+
+async function connectWallet(){
+  if (!window.ethereum) {
+    setStatus(false, 'No injected wallet — try "start test session" instead');
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    account = accounts[0];
+    client = createClient({ chain: studionet, account });
+    setStatus(true, `MetaMask · ${account.slice(0,6)}…${account.slice(-4)}`);
+    connectBtn.textContent = 'reconnect';
+  } catch (err) {
+    setStatus(false, 'Connection rejected');
+  }
+}
+connectBtn.addEventListener('click', connectWallet);
+
+function startTestSession(){
+  const generated = createAccount();
+  account = generated.address ?? generated;
+  client = createClient({ chain: studionet, account: generated });
+  setStatus(true, `Test session · ${account.slice(0,6)}…${account.slice(-4)}`);
+  testSessionBtn.textContent = 'new test session';
+}
+testSessionBtn.addEventListener('click', startTestSession);
+
+const readClient = createClient({ chain: studionet });
+
+// ------------------------------------------------------------------
+// DOM-safety helpers. textContent/createElement only — innerHTML is
+// never used anywhere in this file.
+// ------------------------------------------------------------------
+function showOut(el, text, kind){
+  el.style.display = 'block';
+  el.className = 'out' + (kind ? ' ' + kind : '');
+  el.textContent = text;
+}
+
+function parseLineList(raw){
+  return raw.split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+function localInputToIsoUtc(localValue){
+  const d = new Date(localValue);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function defaultDeadlineLocalValue(){
+  const future = new Date(Date.now() + 6 * 3600000); // now + 6 hours
+  const tzOffsetMs = future.getTimezoneOffset() * 60000;
+  const local = new Date(future.getTime() - tzOffsetMs);
+  return local.toISOString().slice(0, 16);
+}
+document.getElementById('deadline').value = defaultDeadlineLocalValue();
+
+function extractReturnValue(receipt){
+  const payload = receipt?.consensus_data?.leader_receipt?.[0]?.result?.payload?.readable;
+  if (payload === undefined) return null;
+  let value = payload;
+  for (let i = 0; i < 3; i++) {
+    if (typeof value !== 'string') break;
+    const trimmed = value.trim();
+    const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"');
+    if (!looksLikeJson) break;
+    try { value = JSON.parse(value); } catch (e) { break; }
+  }
+  return value;
+}
+
+function requireClient(out){
+  if (!client) {
+    showOut(out, 'Connect a wallet first (MetaMask or test session).', 'err');
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Generic write-call helper: disables the triggering button while the
+ * transaction is in flight (so a slow adjudication call can't be
+ * double-submitted), submits, waits for finalization, and renders the
+ * decoded result.
+ */
+async function callWrite(fnName, args, out, btn, { retries = 30, interval = 4000, pendingNote = '' } = {}){
+  if (!requireClient(out)) return null;
+  const originalLabel = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  try {
+    showOut(out, `Submitting ${fnName}…${pendingNote}`, 'pending');
+    const txHash = await client.writeContract({
+      address: CONTRACT_ADDRESS, functionName: fnName, args, value: 0,
+    });
+    showOut(out, `Transaction sent: ${txHash}\nWaiting for finalization…${pendingNote}`, 'pending');
+    const receipt = await client.waitForTransactionReceipt({
+      hash: txHash, status: 'FINALIZED', interval, retries,
+    });
+    const result = extractReturnValue(receipt);
+    const body = result !== null ? JSON.stringify(result, null, 2) : 'See explorer.';
+    showOut(out, `${fnName} succeeded.\n\nTx: ${txHash}\n\n${body}`, 'ok');
+    return result;
+  } catch (err) {
+    const message = err?.message || String(err);
+    if (/timed out/i.test(message)) {
+      showOut(out, `${message}\n\nThe browser gave up waiting — the transaction may still finalize on-chain. Reload state on the Manage view to re-check.`, 'err');
+    } else {
+      showOut(out, 'Error: ' + message, 'err');
+    }
+    return null;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+  }
+}
+
+async function callRead(fnName, args){
+  return await readClient.readContract({ address: CONTRACT_ADDRESS, functionName: fnName, args });
+}
+
+// ==================================================================
+// ROUTER — three distinct views instead of one long page.
+// ==================================================================
+const routes = ['create', 'manage', 'explorer'];
+const navButtons = Array.from(document.querySelectorAll('#routeNav button'));
+
+function goToRoute(route, opts){
+  if (!routes.includes(route)) route = 'create';
+  for (const r of routes) {
+    document.getElementById('view-' + r).classList.toggle('active', r === route);
+  }
+  for (const btn of navButtons) {
+    btn.classList.toggle('active', btn.dataset.route === route);
+  }
+  window.location.hash = route;
+  if (route === 'manage' && opts && opts.id) {
+    document.getElementById('activeId').value = opts.id;
+    loadActiveAgreement();
+  }
+}
+for (const btn of navButtons) {
+  btn.addEventListener('click', () => goToRoute(btn.dataset.route));
+}
+window.addEventListener('hashchange', () => goToRoute(window.location.hash.replace('#', '')));
+goToRoute(window.location.hash.replace('#', '') || 'create');
+
+function goToManage(id){
+  goToRoute('manage', { id });
+}
+
+// ==================================================================
+// VIEW 1: CREATE
+// ==================================================================
+const conditionRows = document.getElementById('conditionRows');
+const condTotalEl = document.getElementById('condTotal');
+
+function addConditionRow(name = '', desc = '', weight = ''){
+  const wrap = document.createElement('div');
+  wrap.className = 'cond-row';
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text'; nameInput.placeholder = 'Condition name (e.g. on_time)'; nameInput.value = name;
+  nameInput.className = 'cond-name';
+
+  const descInput = document.createElement('textarea');
+  descInput.placeholder = 'What must be true for this condition to PASS?';
+  descInput.value = desc; descInput.style.minHeight = '46px'; descInput.className = 'cond-desc';
+  descInput.style.marginTop = '6px';
+
+  const weightRow = document.createElement('div');
+  weightRow.style.display = 'flex'; weightRow.style.gap = '8px'; weightRow.style.marginTop = '6px';
+
+  const weightInput = document.createElement('input');
+  weightInput.type = 'number'; weightInput.placeholder = 'weight (bps)'; weightInput.value = weight;
+  weightInput.className = 'cond-weight'; weightInput.min = '1'; weightInput.max = '10000';
+  weightInput.addEventListener('input', updateConditionTotal);
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button'; removeBtn.className = 'tiny'; removeBtn.textContent = 'remove';
+  removeBtn.addEventListener('click', () => { wrap.remove(); updateConditionTotal(); });
+
+  weightRow.appendChild(weightInput);
+  weightRow.appendChild(removeBtn);
+  wrap.appendChild(nameInput);
+  wrap.appendChild(descInput);
+  wrap.appendChild(weightRow);
+  conditionRows.appendChild(wrap);
+  updateConditionTotal();
+}
+
+function updateConditionTotal(){
+  const weights = Array.from(document.querySelectorAll('.cond-weight')).map(i => Number(i.value) || 0);
+  const total = weights.reduce((a, b) => a + b, 0);
+  condTotalEl.textContent = `Total weight: ${total} / 10000`;
+  condTotalEl.className = 'cond-total ' + (total === 10000 ? 'good' : 'bad');
+}
+
+document.getElementById('addCondBtn').addEventListener('click', () => addConditionRow());
+
+addConditionRow('on_time', 'The deliverable was submitted before the agreed deadline.', 3000);
+addConditionRow('min_sources', 'The deliverable cites at least 5 qualifying, distinct sources.', 4000);
+addConditionRow('quality', 'The deliverable directly addresses the requested task.', 3000);
+
+document.getElementById('createBtn').addEventListener('click', async () => {
+  const out = document.getElementById('createOut');
+  const btn = document.getElementById('createBtn');
+
+  const partyB = document.getElementById('partyB').value.trim();
+  const taskDesc = document.getElementById('taskDesc').value.trim();
+  const paymentAmount = Number(document.getElementById('paymentAmount').value);
+  const deadlineIso = localInputToIsoUtc(document.getElementById('deadline').value);
+
+  const names = Array.from(document.querySelectorAll('.cond-name')).map(i => i.value.trim());
+  const descs = Array.from(document.querySelectorAll('.cond-desc')).map(i => i.value.trim());
+  const weights = Array.from(document.querySelectorAll('.cond-weight')).map(i => Number(i.value));
+
+  if (!partyB) { showOut(out, "Enter party B's address.", 'err'); return; }
+  if (!taskDesc) { showOut(out, 'Enter a task description.', 'err'); return; }
+  if (!deadlineIso) { showOut(out, 'Enter a valid submission deadline.', 'err'); return; }
+  if (names.length === 0 || names.some(n => !n) || descs.some(d => !d)) {
+    showOut(out, 'Every condition needs a name and a description.', 'err'); return;
+  }
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (total !== 10000) { showOut(out, `Condition weights must total exactly 10000 bps (currently ${total}).`, 'err'); return; }
+
+  const args = [partyB, taskDesc, names, descs, weights, paymentAmount, deadlineIso];
+  const result = await callWrite('create_agreement', args, out, btn);
+  if (result !== null && result !== undefined) {
+    const id = String(result);
+    showOut(out, `Agreement created: ${id}\n\nOpening it in Manage…`, 'ok');
+    setTimeout(() => goToManage(id), 900);
+  }
+});
+
+// ==================================================================
+// VIEW 2: MANAGE (scoped to one agreement id)
+// ==================================================================
+function activeId(){
+  return document.getElementById('activeId').value.trim();
+}
+
+function statusBadgeHtmlFree(status){
+  // Returns a small DOM node, never a string, since this is the only
+  // place we render a "badge" outside of textContent.
+  const span = document.createElement('span');
+  span.className = 'badge ' + status;
+  span.textContent = status;
+  return span;
+}
+
+async function loadActiveAgreement(){
+  const id = activeId();
+  const panel = document.getElementById('stateSummaryPanel');
+  const out = document.getElementById('stateSummaryOut');
+  if (!id) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  showOut(out, 'Reading contract state…', 'pending');
+  try {
+    const raw = await callRead('get_agreement', [id]);
+    const agreement = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    showOut(out, JSON.stringify(agreement, null, 2), 'ok');
+  } catch (err) {
+    showOut(out, 'Error: ' + (err?.message || String(err)), 'err');
+  }
+}
+document.getElementById('loadActiveBtn').addEventListener('click', loadActiveAgreement);
+document.getElementById('activeId').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadActiveAgreement();
+});
+
+document.getElementById('acceptBtn').addEventListener('click', () => {
+  const id = activeId();
+  const out = document.getElementById('acceptOut');
+  if (!id) { showOut(out, 'Load an agreement ID above first.', 'err'); return; }
+  callWrite('accept_agreement', [id], out, document.getElementById('acceptBtn'));
+});
+document.getElementById('cancelBtn').addEventListener('click', () => {
+  const id = activeId();
+  const out = document.getElementById('acceptOut');
+  if (!id) { showOut(out, 'Load an agreement ID above first.', 'err'); return; }
+  callWrite('cancel_agreement', [id], out, document.getElementById('cancelBtn'));
+});
+
+document.getElementById('submitBtn').addEventListener('click', () => {
+  const id = activeId();
+  const claim = document.getElementById('submitClaim').value.trim();
+  const urls = parseLineList(document.getElementById('submitUrls').value);
+  const out = document.getElementById('submitOut');
+  if (!id) { showOut(out, 'Load an agreement ID above first.', 'err'); return; }
+  if (!claim) { showOut(out, 'Enter claim text.', 'err'); return; }
+  callWrite('submit_deliverable', [id, claim, urls], out, document.getElementById('submitBtn'));
+});
+
+document.getElementById('disputeBtn').addEventListener('click', () => {
+  const id = activeId();
+  const claim = document.getElementById('disputeClaim').value.trim();
+  const urls = parseLineList(document.getElementById('disputeUrls').value);
+  const out = document.getElementById('disputeOut');
+  if (!id) { showOut(out, 'Load an agreement ID above first.', 'err'); return; }
+  if (!claim) { showOut(out, 'Enter a counter-claim.', 'err'); return; }
+  callWrite('raise_dispute', [id, claim, urls], out, document.getElementById('disputeBtn'));
+});
+
+document.getElementById('permBtn').addEventListener('click', () => {
+  const id = activeId();
+  const fn = document.getElementById('permAction').value;
+  const out = document.getElementById('permOut');
+  if (!id) { showOut(out, 'Load an agreement ID above first.', 'err'); return; }
+  const isAdjudication = fn === 'resolve_dispute' || fn === 'resolve_appeal';
+  const opts = isAdjudication
+    ? { retries: 90, interval: 5000, pendingNote: ' This runs a real fetch + LLM adjudication under validator consensus — it can take a few minutes.' }
+    : {};
+  callWrite(fn, [id], out, document.getElementById('permBtn'), opts);
+});
+
+document.getElementById('appealBtn').addEventListener('click', () => {
+  const id = activeId();
+  const arg = document.getElementById('appealArg').value.trim();
+  const out = document.getElementById('appealOut');
+  if (!id) { showOut(out, 'Load an agreement ID above first.', 'err'); return; }
+  if (!arg) { showOut(out, 'Enter an appeal argument.', 'err'); return; }
+  callWrite('raise_appeal', [id, arg], out, document.getElementById('appealBtn'));
+});
+
+document.getElementById('roleBtn').addEventListener('click', async () => {
+  const id = activeId();
+  const addr = document.getElementById('roleAddr').value.trim();
+  const out = document.getElementById('roleOut');
+  if (!id || !addr) { showOut(out, 'Load an agreement ID above and enter an address.', 'err'); return; }
+  try {
+    showOut(out, 'Reading contract state…', 'pending');
+    const role = await callRead('get_role', [id, addr]);
+    showOut(out, `Role: ${role}`, 'ok');
+  } catch (err) {
+    showOut(out, 'Error: ' + (err?.message || String(err)), 'err');
+  }
+});
+
+// ==================================================================
+// VIEW 3: EXPLORER
+// ==================================================================
+const explorerBody = document.getElementById('explorerBody');
+const explorerCount = document.getElementById('explorerCount');
+
+function clearChildren(node){ while (node.firstChild) node.removeChild(node.firstChild); }
+
+function buildAgreementCard(id, agreement){
+  const card = document.createElement('div');
+  card.className = 'agreement-card';
+
+  const top = document.createElement('div');
+  top.style.display = 'flex'; top.style.justifyContent = 'space-between'; top.style.alignItems = 'center';
+  const aid = document.createElement('span'); aid.className = 'aid'; aid.textContent = id;
+  top.appendChild(aid);
+  top.appendChild(statusBadgeHtmlFree(agreement.status || 'unknown'));
+  card.appendChild(top);
+
+  const task = document.createElement('div');
+  task.className = 'task';
+  task.textContent = agreement.task_description || '(no description)';
+  card.appendChild(task);
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const a = (agreement.party_a || '').slice(0, 8);
+  const b = (agreement.party_b || '').slice(0, 8);
+  let extra = '';
+  const verdict = agreement.verdict_final || agreement.verdict_1;
+  if (verdict && verdict.finding) {
+    extra = ` · ${verdict.finding} · ${verdict.settlement_to_a_bps ?? '?'} bps to A`;
+  }
+  meta.textContent = `A ${a}… · B ${b}…${extra}`;
+  card.appendChild(meta);
+
+  card.addEventListener('click', () => goToManage(id));
+  return card;
+}
+
+async function refreshExplorer(){
+  explorerCount.textContent = 'Loading…';
+  clearChildren(explorerBody);
+  const loading = document.createElement('div');
+  loading.className = 'empty-state';
+  const spin = document.createElement('span'); spin.className = 'spinner';
+  loading.appendChild(spin);
+  loading.appendChild(document.createTextNode('Reading total_agreements()…'));
+  explorerBody.appendChild(loading);
+
+  try {
+    const total = Number(await callRead('total_agreements', []));
+    explorerCount.textContent = `${total} agreement${total === 1 ? '' : 's'} on this contract`;
+
+    if (!total) {
+      clearChildren(explorerBody);
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'No agreements yet — create the first one.';
+      explorerBody.appendChild(empty);
+      return;
+    }
+
+    const ids = [];
+    for (let i = total; i >= 1; i--) ids.push(`agreement-${i}`);
+
+    const results = await Promise.all(ids.map(async (id) => {
+      try {
+        const raw = await callRead('get_agreement', [id]);
+        const agreement = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return { id, agreement };
+      } catch (err) {
+        return { id, agreement: null, error: err };
+      }
+    }));
+
+    clearChildren(explorerBody);
+    const grid = document.createElement('div');
+    grid.className = 'agreement-cards';
+    for (const { id, agreement } of results) {
+      if (agreement) grid.appendChild(buildAgreementCard(id, agreement));
+    }
+    explorerBody.appendChild(grid);
+  } catch (err) {
+    clearChildren(explorerBody);
+    const errEl = document.createElement('div');
+    errEl.className = 'empty-state';
+    errEl.textContent = 'Error reading contract: ' + (err?.message || String(err));
+    explorerBody.appendChild(errEl);
+    explorerCount.textContent = '';
+  }
+}
+document.getElementById('refreshExplorerBtn').addEventListener('click', refreshExplorer);
+</script>
+</body>
+</html>
