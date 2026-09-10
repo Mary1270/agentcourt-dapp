@@ -269,7 +269,12 @@
       <span id="statusText">Not connected</span>
       <button id="connectBtn" type="button">Connect wallet</button>
       <button id="testSessionBtn" type="button">Start test session</button>
+      <button id="copyAddrBtn" type="button" style="display:none;">Copy my address</button>
     </div>
+  </div>
+  <div class="topbar-inner" id="fullAddrRow" style="display:none; padding-top:0; padding-bottom:12px;">
+    <span class="hint">Your full address (long-press to select if the copy button fails):</span>
+    <code id="fullAddrText" style="font-size:11.5px; color:var(--amber); word-break:break-all; user-select:all;"></code>
   </div>
   <nav id="routeNav">
     <button data-route="create" type="button">1 · Create Agreement</button>
@@ -489,11 +494,47 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const connectBtn = document.getElementById('connectBtn');
 const testSessionBtn = document.getElementById('testSessionBtn');
+const copyAddrBtn = document.getElementById('copyAddrBtn');
+
+const fullAddrRow = document.getElementById('fullAddrRow');
+const fullAddrText = document.getElementById('fullAddrText');
 
 function setStatus(connected, label){
   statusDot.classList.toggle('on', connected);
   statusText.textContent = label;
+  copyAddrBtn.style.display = connected ? 'inline-block' : 'none';
+  fullAddrRow.style.display = connected ? 'flex' : 'none';
+  fullAddrText.textContent = connected ? account : '';
 }
+
+async function copyToClipboard(text){
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    // Clipboard API can be unavailable (older browsers, non-HTTPS,
+    // permission denied) - fall back to a manual-select textarea.
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+copyAddrBtn.addEventListener('click', async () => {
+  if (!account) return;
+  const original = copyAddrBtn.textContent;
+  const ok = await copyToClipboard(account);
+  copyAddrBtn.textContent = ok ? 'Copied!' : 'Copy failed — long-press address below';
+  setTimeout(() => { copyAddrBtn.textContent = original; }, 1800);
+});
 
 async function connectWallet(){
   if (!window.ethereum) {
