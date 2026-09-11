@@ -567,16 +567,22 @@ connectBtn.addEventListener('click', connectWallet);
 // ------------------------------------------------------------------
 const TEST_SESSION_STORAGE_KEY = 'agentcourt_test_session_pk';
 
+function isLikelyPrivateKey(value){
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
 function startTestSession(privateKey){
   const generated = privateKey ? createAccount(privateKey) : createAccount();
   account = generated.address ?? generated;
   client = createClient({ chain: studionet, account: generated });
-  try {
-    localStorage.setItem(TEST_SESSION_STORAGE_KEY, generated.privateKey);
-  } catch (e) {
-    // Storage can be unavailable (private browsing, quota) - the
-    // session still works for this page load, it just won't survive
-    // a reload. Not fatal.
+  if (isLikelyPrivateKey(generated.privateKey)) {
+    try {
+      localStorage.setItem(TEST_SESSION_STORAGE_KEY, generated.privateKey);
+    } catch (e) {
+      // Storage can be unavailable (private browsing, quota) - the
+      // session still works for this page load, it just won't survive
+      // a reload. Not fatal.
+    }
   }
   const restored = privateKey ? ' (restored)' : '';
   setStatus(true, `Test session${restored} · ${account.slice(0,6)}…${account.slice(-4)}`);
@@ -586,18 +592,30 @@ testSessionBtn.addEventListener('click', () => startTestSession());
 
 // On page load, silently restore a previously-generated test session
 // if one is saved, so refreshing this page or reopening the tab keeps
-// the same Party A / Party B identity mid-flow.
-(function restoreTestSessionOnLoad(){
+// the same Party A / Party B identity mid-flow. This must NEVER throw
+// past this point - a bad or incompatible saved key must not break
+// the rest of the page (routing, forms, everything below this line
+// would otherwise never run, since an uncaught error stops the whole
+// module's remaining top-level code).
+try {
   let savedKey = null;
   try {
     savedKey = localStorage.getItem(TEST_SESSION_STORAGE_KEY);
   } catch (e) {
     savedKey = null;
   }
-  if (savedKey) {
+  if (savedKey && isLikelyPrivateKey(savedKey)) {
     startTestSession(savedKey);
+  } else if (savedKey) {
+    // Was saved by an older/broken version of this page - discard it.
+    try { localStorage.removeItem(TEST_SESSION_STORAGE_KEY); } catch (e) { /* ignore */ }
   }
-})();
+} catch (err) {
+  console.warn('Could not restore saved test session, clearing it:', err);
+  try { localStorage.removeItem(TEST_SESSION_STORAGE_KEY); } catch (e) { /* ignore */ }
+  account = null;
+  client = null;
+}
 
 const readClient = createClient({ chain: studionet });
 
