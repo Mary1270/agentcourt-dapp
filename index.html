@@ -272,6 +272,9 @@
       <button id="copyAddrBtn" type="button" style="display:none;">Copy my address</button>
     </div>
   </div>
+  <div class="topbar-inner" style="padding-top:0; padding-bottom:4px;">
+    <span class="hint" id="sessionDebugRow" style="color:var(--red);"></span>
+  </div>
   <div class="topbar-inner" id="fullAddrRow" style="display:none; padding-top:0; padding-bottom:4px;">
     <span class="hint">Your full address (long-press to select if the copy button fails):</span>
     <code id="fullAddrText" style="font-size:11.5px; color:var(--amber); word-break:break-all; user-select:all;"></code>
@@ -575,15 +578,23 @@ function startTestSession(privateKey){
   const generated = privateKey ? createAccount(privateKey) : createAccount();
   account = generated.address ?? generated;
   client = createClient({ chain: studionet, account: generated });
+
+  const debugRow = document.getElementById('sessionDebugRow');
+  const keys = (() => { try { return Object.keys(generated).join(', '); } catch (e) { return '(unreadable)'; } })();
+  const pkType = typeof generated.privateKey;
+  const pkPreview = pkType === 'string' ? `${generated.privateKey.slice(0,6)}…(len ${generated.privateKey.length})` : String(generated.privateKey);
+
   if (isLikelyPrivateKey(generated.privateKey)) {
     try {
       localStorage.setItem(TEST_SESSION_STORAGE_KEY, generated.privateKey);
+      debugRow.textContent = `DEBUG: session saved to localStorage OK. keys=[${keys}]`;
     } catch (e) {
-      // Storage can be unavailable (private browsing, quota) - the
-      // session still works for this page load, it just won't survive
-      // a reload. Not fatal.
+      debugRow.textContent = `DEBUG: localStorage.setItem threw: ${e?.message || e}`;
     }
+  } else {
+    debugRow.textContent = `DEBUG: NOT saved (doesn't look like a private key). keys=[${keys}], typeof privateKey=${pkType}, value=${pkPreview}`;
   }
+
   const restored = privateKey ? ' (restored)' : '';
   setStatus(true, `Test session${restored} · ${account.slice(0,6)}…${account.slice(-4)}`);
   testSessionBtn.textContent = 'new test session';
@@ -607,11 +618,17 @@ try {
   if (savedKey && isLikelyPrivateKey(savedKey)) {
     startTestSession(savedKey);
   } else if (savedKey) {
-    // Was saved by an older/broken version of this page - discard it.
+    document.getElementById('sessionDebugRow').textContent =
+      `DEBUG: found a saved value but it didn't look like a private key (len ${savedKey.length}) — discarded.`;
     try { localStorage.removeItem(TEST_SESSION_STORAGE_KEY); } catch (e) { /* ignore */ }
+  } else {
+    document.getElementById('sessionDebugRow').textContent = 'DEBUG: no saved session found in localStorage on this load.';
   }
 } catch (err) {
   console.warn('Could not restore saved test session, clearing it:', err);
+  try {
+    document.getElementById('sessionDebugRow').textContent = `DEBUG: restore threw: ${err?.message || err}`;
+  } catch (e2) { /* ignore */ }
   try { localStorage.removeItem(TEST_SESSION_STORAGE_KEY); } catch (e) { /* ignore */ }
   account = null;
   client = null;
