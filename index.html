@@ -272,9 +272,12 @@
       <button id="copyAddrBtn" type="button" style="display:none;">Copy my address</button>
     </div>
   </div>
-  <div class="topbar-inner" id="fullAddrRow" style="display:none; padding-top:0; padding-bottom:12px;">
+  <div class="topbar-inner" id="fullAddrRow" style="display:none; padding-top:0; padding-bottom:4px;">
     <span class="hint">Your full address (long-press to select if the copy button fails):</span>
     <code id="fullAddrText" style="font-size:11.5px; color:var(--amber); word-break:break-all; user-select:all;"></code>
+  </div>
+  <div class="topbar-inner" style="padding-top:0; padding-bottom:12px;">
+    <span class="hint">Test sessions are saved in this browser (localStorage) and survive reloads — "new test session" replaces the saved one. Testnet-only; never do this with a real-funds key.</span>
   </div>
   <nav id="routeNav">
     <button data-route="create" type="button">1 · Create Agreement</button>
@@ -553,14 +556,48 @@ async function connectWallet(){
 }
 connectBtn.addEventListener('click', connectWallet);
 
-function startTestSession(){
-  const generated = createAccount();
+// ------------------------------------------------------------------
+// Test-session persistence. A generated test-session account only
+// lives in page memory by default, so a reload or tab close loses it
+// forever - which makes any multi-step flow that spans real time
+// (waiting out a dispute/challenge window) impossible to continue.
+// We persist the private key in this browser's localStorage so the
+// same address survives reloads. This is for GenLayer Studio testing
+// only - never store a real-funds private key this way.
+// ------------------------------------------------------------------
+const TEST_SESSION_STORAGE_KEY = 'agentcourt_test_session_pk';
+
+function startTestSession(privateKey){
+  const generated = privateKey ? createAccount(privateKey) : createAccount();
   account = generated.address ?? generated;
   client = createClient({ chain: studionet, account: generated });
-  setStatus(true, `Test session · ${account.slice(0,6)}…${account.slice(-4)}`);
+  try {
+    localStorage.setItem(TEST_SESSION_STORAGE_KEY, generated.privateKey);
+  } catch (e) {
+    // Storage can be unavailable (private browsing, quota) - the
+    // session still works for this page load, it just won't survive
+    // a reload. Not fatal.
+  }
+  const restored = privateKey ? ' (restored)' : '';
+  setStatus(true, `Test session${restored} · ${account.slice(0,6)}…${account.slice(-4)}`);
   testSessionBtn.textContent = 'new test session';
 }
-testSessionBtn.addEventListener('click', startTestSession);
+testSessionBtn.addEventListener('click', () => startTestSession());
+
+// On page load, silently restore a previously-generated test session
+// if one is saved, so refreshing this page or reopening the tab keeps
+// the same Party A / Party B identity mid-flow.
+(function restoreTestSessionOnLoad(){
+  let savedKey = null;
+  try {
+    savedKey = localStorage.getItem(TEST_SESSION_STORAGE_KEY);
+  } catch (e) {
+    savedKey = null;
+  }
+  if (savedKey) {
+    startTestSession(savedKey);
+  }
+})();
 
 const readClient = createClient({ chain: studionet });
 
