@@ -614,16 +614,44 @@ function requireClient(out){
   return true;
 }
 
+// Expected resulting `status` for each write method, used to verify
+// against the real on-chain state after a transaction finalizes.
+// GenLayer's consensus can finalize a transaction as "Undetermined"
+// (independent LLM validators disagreed on a nondeterministic step,
+// e.g. resolve_dispute's adjudication) WITHOUT ever committing the
+// change - the transaction still finalizes successfully as a
+// transaction, but the contract's state never moves. A receipt alone
+// cannot be trusted to mean "the state changed as expected."
+const EXPECTED_STATUS_AFTER = {
+  accept_agreement: 'open',
+  cancel_agreement: 'cancelled',
+  submit_deliverable: 'submitted',
+  raise_dispute: 'disputed',
+  resolve_dispute: 'adjudicated',
+  raise_appeal: 'appealed',
+  resolve_appeal: 'settled',
+  finalize_uncontested: 'settled',
+  finalize_unappealed: 'settled',
+  expire_unaccepted: 'cancelled',
+  expire_unsubmitted: 'refunded',
+  force_timeout_dispute: 'refunded',
+  force_timeout_appeal: 'settled',
+};
+
 /**
  * Generic write-call helper: disables the triggering button while the
  * transaction is in flight (so a slow adjudication call can't be
- * double-submitted), submits, waits for finalization, and renders the
- * decoded result.
+ * double-submitted), submits, waits for finalization, then - instead
+ * of trusting the decoded receipt payload - re-reads the agreement
+ * from the contract and checks whether `status` actually moved to
+ * where this call was supposed to take it. Only then is the result
+ * shown as a genuine success.
  */
 async function callWrite(fnName, args, out, btn, { retries = 30, interval = 4000, pendingNote = '' } = {}){
   if (!requireClient(out)) return null;
   const originalLabel = btn ? btn.textContent : null;
   if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  const agreementId = (fnName !== 'create_agreement' && typeof args[0] === 'string') ? args[0] : null;
   try {
     showOut(out, `Submitting ${fnName}…${pendingNote}`, 'pending');
     const txHash = await client.writeContract({
@@ -633,10 +661,65 @@ async function callWrite(fnName, args, out, btn, { retries = 30, interval = 4000
     const receipt = await client.waitForTransactionReceipt({
       hash: txHash, status: 'FINALIZED', interval, retries,
     });
-    const result = extractReturnValue(receipt);
-    const body = result !== null ? JSON.stringify(result, null, 2) : 'See explorer.';
-    showOut(out, `${fnName} succeeded.\n\nTx: ${txHash}\n\n${body}`, 'ok');
-    return result;
+    const decoded = extractReturnValue(receipt);
+
+    let confirmed = null;
+    let confirmError = null;
+    if (agreementId) {
+      showOut(out, `Transaction finalized: ${txHash}\nVerifying against actual on-chain state…${pendingNote}`, 'pending');
+      try {
+        const raw = await callRead('get_agreement', [agreementId]);
+        confirmed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      } catch (e) {
+        confirmError = e?.message || String(e);
+      }
+    }
+
+    const expected = EXPECTED_STATUS_AFTER[fnName];
+    const decodedBody = decoded !== null ? JSON.stringify(decoded, null, 2) : '(no decoded payload)';
+
+    if (confirmed && expected && confirmed.status !== expected) {
+      // The transaction finalized, but the contract's real state did
+      // not move where this call should have taken it. Most likely
+      // cause: GenLayer's validators disagreed on a nondeterministic
+      // step (e.g. the LLM adjudication in resolve_dispute /
+      // resolve_appeal) and consensus finalized as "Undetermined" -
+      // or the contract legitimately rejected the call. Either way,
+      // this is NOT a success and must not be shown as one.
+      showOut(
+        out,
+        `⚠️ Transaction finalized, but on-chain state did NOT change as expected.\n\n`
+        + `Tx: ${txHash}\n`
+        + `Expected status after ${fnName}: "${expected}"\n`
+        + `Actual on-chain status: "${confirmed.status}"\n\n`
+        + `This usually means GenLayer's validators disagreed on a nondeterministic step `
+        + `(consensus finalized as "Undetermined" rather than "Accepted") and nothing was `
+        + `committed, or the contract correctly rejected the call. Check the transaction on `
+        + `GenLayer Explorer for the Consensus tab, or simply try the action again - each `
+        + `attempt is an independent run.\n\n`
+        + `What the transaction itself reported:\n${decodedBody}\n\n`
+        + `Confirmed on-chain state:\n${JSON.stringify(confirmed, null, 2)}`,
+        'err'
+      );
+      return null;
+    }
+
+    if (confirmed) {
+      showOut(
+        out,
+        `${fnName} succeeded and is confirmed on-chain.\n\nTx: ${txHash}\n\n`
+        + `Confirmed on-chain state:\n${JSON.stringify(confirmed, null, 2)}`,
+        'ok'
+      );
+      return confirmed;
+    }
+
+    // No agreementId to verify against (e.g. create_agreement, or a
+    // read failed) - fall back to showing the decoded payload, but
+    // never claim more certainty than we actually have.
+    const fallbackNote = confirmError ? `\n\n(Could not verify against on-chain state: ${confirmError})` : '';
+    showOut(out, `${fnName} finalized.\n\nTx: ${txHash}\n\n${decodedBody}${fallbackNote}`, 'ok');
+    return decoded;
   } catch (err) {
     const message = err?.message || String(err);
     if (/timed out/i.test(message)) {
@@ -647,6 +730,12 @@ async function callWrite(fnName, args, out, btn, { retries = 30, interval = 4000
     return null;
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+    // Always refresh the authoritative "Current state" panel at the
+    // top of Manage, regardless of success/failure above, so the
+    // person never has to guess and reload manually.
+    if (agreementId && document.getElementById('activeId')?.value.trim() === agreementId) {
+      loadActiveAgreement();
+    }
   }
 }
 
